@@ -82,14 +82,37 @@
 
 <script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
 <script>
-  // ===== แก้ค่านี้ =====
   const LIFF_ID = '2009263647-T2nMLmdi';
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbxzkJsQqqUDD8bkb7FE6u4D5Rpw9p7QkUwqmnFgdEM0XOyUvRJ4bETjRDSnYEs3LeZG/exec';
-  // ====================
 
   let userData = {};
   let quotaData = {};
 
+  // ===== JSONP =====
+  function loadEmployee(lineUserId) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'cb_' + Date.now();
+      const timeout = setTimeout(() => {
+        delete window[callbackName];
+        reject(new Error('timeout'));
+      }, 10000);
+
+      window[callbackName] = function(data) {
+        clearTimeout(timeout);
+        delete window[callbackName];
+        document.getElementById('jsonp-script')?.remove();
+        resolve(data);
+      };
+
+      const script = document.createElement('script');
+      script.id = 'jsonp-script';
+      script.src = `${GAS_URL}?action=getEmployee&lineUserId=${encodeURIComponent(lineUserId)}&callback=${callbackName}`;
+      script.onerror = () => reject(new Error('script load error'));
+      document.body.appendChild(script);
+    });
+  }
+
+  // ===== INIT LIFF =====
   async function initLiff() {
     try {
       document.getElementById('loading').innerHTML = 'กำลังเชื่อมต่อ LINE...';
@@ -108,21 +131,10 @@
       userData.pictureUrl = profile.pictureUrl;
       document.getElementById('profile-img').src = profile.pictureUrl;
 
-      // เรียก GAS API
-     function loadEmployee(lineUserId) {
-  return new Promise((resolve) => {
-    const callbackName = 'cb_' + Date.now();
-    window[callbackName] = function(data) {
-      delete window[callbackName];
-      document.getElementById('jsonp-script')?.remove();
-      resolve(data);
-    };
-    const script = document.createElement('script');
-    script.id = 'jsonp-script';
-    script.src = `${GAS_URL}?action=getEmployee&lineUserId=${lineUserId}&callback=${callbackName}`;
-    document.body.appendChild(script);
-  });
-}
+      document.getElementById('loading').innerHTML = 'กำลังโหลดข้อมูลพนักงาน...<br><small>' + profile.userId + '</small>';
+
+      const emp = await loadEmployee(profile.userId);
+      onEmployeeLoaded(emp);
 
     } catch (e) {
       document.getElementById('loading').innerHTML = '❌ Error: ' + e.message;
