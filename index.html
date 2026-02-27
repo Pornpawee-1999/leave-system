@@ -109,10 +109,20 @@
       document.getElementById('profile-img').src = profile.pictureUrl;
 
       // เรียก GAS API
-      const res = await fetch(`${GAS_URL}?action=getEmployee&lineUserId=${profile.userId}`);
-      const emp = await res.json();
-
-      onEmployeeLoaded(emp);
+     function loadEmployee(lineUserId) {
+  return new Promise((resolve) => {
+    const callbackName = 'cb_' + Date.now();
+    window[callbackName] = function(data) {
+      delete window[callbackName];
+      document.getElementById('jsonp-script')?.remove();
+      resolve(data);
+    };
+    const script = document.createElement('script');
+    script.id = 'jsonp-script';
+    script.src = `${GAS_URL}?action=getEmployee&lineUserId=${lineUserId}&callback=${callbackName}`;
+    document.body.appendChild(script);
+  });
+}
 
     } catch (e) {
       document.getElementById('loading').innerHTML = '❌ Error: ' + e.message;
