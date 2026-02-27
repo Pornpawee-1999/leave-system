@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบลาออนไลน์ BIOPHICS</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f0f4f8; min-height: 100vh; }
+    .header { background: #06C755; color: white; padding: 16px 20px; font-size: 18px; font-weight: bold; }
+    .profile-card { background: white; margin: 16px; border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .profile-card img { width: 50px; height: 50px; border-radius: 50%; }
+    .quota-card, .form-card { background: white; margin: 0 16px 16px; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .quota-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .quota-item { background: #f8f9fa; border-radius: 8px; padding: 10px; text-align: center; }
+    .quota-item .num { font-size: 22px; font-weight: bold; color: #06C755; }
+    .quota-item .label { font-size: 11px; color: #666; margin-top: 2px; }
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+    select, input, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+    textarea { height: 80px; resize: none; }
+    .btn-submit { width: 100%; background: #06C755; color: white; border: none; padding: 14px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .btn-submit:disabled { background: #ccc; }
+    .error-msg { color: #e53e3e; font-size: 12px; margin-top: 4px; display: none; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+  </style>
+</head>
+<body>
+
+<div class="header">🌿 ระบบลาออนไลน์ BIOPHICS</div>
+<div id="loading" class="loading">กำลังโหลด...</div>
+
+<div id="main-content" style="display:none;">
+  <div class="profile-card">
+    <img id="profile-img" src="" alt="profile">
+    <div>
+      <h3 id="profile-name">-</h3>
+      <p id="profile-position" style="font-size:13px;color:#666;">-</p>
+    </div>
+  </div>
+  <div class="quota-card">
+    <h4>📅 วันลาคงเหลือ</h4>
+    <div class="quota-grid">
+      <div class="quota-item"><div class="num" id="q-sick">-</div><div class="label">ลาป่วย</div></div>
+      <div class="quota-item"><div class="num" id="q-personal">-</div><div class="label">ลากิจ</div></div>
+      <div class="quota-item"><div class="num" id="q-vacation">-</div><div class="label">ลาพักร้อน</div></div>
+      <div class="quota-item"><div class="num" id="q-maternity">-</div><div class="label">ลาคลอด/บิดา</div></div>
+    </div>
+  </div>
+  <div class="form-card">
+    <h4>📝 ยื่นใบลา</h4>
+    <div class="form-group">
+      <label>ประเภทการลา</label>
+      <select id="leave-type" onchange="updateQuotaDisplay()">
+        <option value="">-- เลือกประเภทการลา --</option>
+        <option value="ลาป่วย">ลาป่วย</option>
+        <option value="ลากิจ">ลากิจ</option>
+        <option value="ลาพักร้อน">ลาพักร้อน</option>
+        <option value="ลาคลอด/ลาบิดา">ลาคลอด/ลาบิดา</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>วันที่เริ่มลา</label>
+      <input type="date" id="start-date" onchange="calcDays()">
+    </div>
+    <div class="form-group">
+      <label>วันที่สิ้นสุด</label>
+      <input type="date" id="end-date" onchange="calcDays()">
+    </div>
+    <div class="form-group">
+      <label>จำนวนวัน (วันทำการ)</label>
+      <input type="text" id="total-days" readonly placeholder="คำนวณอัตโนมัติ" style="background:#f8f9fa;">
+      <div class="error-msg" id="quota-error">⚠️ วันลาไม่เพียงพอ</div>
+    </div>
+    <div class="form-group">
+      <label>เหตุผลการลา</label>
+      <textarea id="reason" placeholder="ระบุเหตุผล..."></textarea>
+    </div>
+    <button class="btn-submit" id="btn-submit" onclick="submitLeave()">ส่งใบลา</button>
+  </div>
+</div>
+
+<script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
+<script>
+  // ===== แก้ค่านี้ =====
+  const LIFF_ID = '2009263647-T2nMLmdi';
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbwtYQMeOkefQVNvS07f5GuWSzVU4OSzhEtrCYL6QVHRCWaUKWrocr2j3t-caXF_ZCX2/exec';
+  // ====================
+
+  let userData = {};
+  let quotaData = {};
+
+  async function initLiff() {
+    try {
+      document.getElementById('loading').innerHTML = 'กำลังเชื่อมต่อ LINE...';
+      await liff.init({ liffId: LIFF_ID });
+
+      if (!liff.isLoggedIn()) {
+        liff.login();
+        return;
+      }
+
+      document.getElementById('loading').innerHTML = 'กำลังดึงข้อมูล...';
+      const profile = await liff.getProfile();
+
+      userData.lineUserId = profile.userId;
+      userData.displayName = profile.displayName;
+      userData.pictureUrl = profile.pictureUrl;
+      document.getElementById('profile-img').src = profile.pictureUrl;
+
+      // เรียก GAS API
+      const res = await fetch(`${GAS_URL}?action=getEmployee&lineUserId=${profile.userId}`);
+      const emp = await res.json();
+
+      onEmployeeLoaded(emp);
+
+    } catch (e) {
+      document.getElementById('loading').innerHTML = '❌ Error: ' + e.message;
+    }
+  }
+
+  function onEmployeeLoaded(emp) {
+    if (!emp || emp.error) {
+      document.getElementById('loading').innerHTML =
+        '❌ ไม่พบข้อมูลพนักงาน<br><small>Line ID: ' + userData.lineUserId + '</small>';
+      return;
+    }
+    userData.employeeId = emp.employee_id;
+    quotaData = {
+      'ลาป่วย':         emp.quota_sick - emp.used_sick,
+      'ลากิจ':          emp.quota_personal - emp.used_personal,
+      'ลาพักร้อน':     emp.quota_vacation - emp.used_vacation,
+      'ลาคลอด/ลาบิดา': emp.quota_maternity - emp.used_maternity
+    };
+    document.getElementById('profile-name').textContent = emp.full_name;
+    document.getElementById('profile-position').textContent = emp.position;
+    document.getElementById('q-sick').textContent = quotaData['ลาป่วย'];
+    document.getElementById('q-personal').textContent = quotaData['ลากิจ'];
+    document.getElementById('q-vacation').textContent = quotaData['ลาพักร้อน'];
+    document.getElementById('q-maternity').textContent = quotaData['ลาคลอด/ลาบิดา'];
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+  }
+
+  function calcDays() {
+    const start = document.getElementById('start-date').value;
+    const end   = document.getElementById('end-date').value;
+    if (!start || !end) return;
+    let count = 0;
+    let current = new Date(start);
+    const endDate = new Date(end);
+    while (current <= endDate) {
+      const day = current.getDay();
+      if (day !== 0 && day !== 6) count++;
+      current.setDate(current.getDate() + 1);
+    }
+    document.getElementById('total-days').value = count + ' วัน';
+    validateQuota(count);
+  }
+
+  function validateQuota(days) {
+    const leaveType = document.getElementById('leave-type').value;
+    const errorMsg  = document.getElementById('quota-error');
+    const btn       = document.getElementById('btn-submit');
+    if (!leaveType) return;
+    const remaining = quotaData[leaveType] || 0;
+    if (days > remaining) {
+      errorMsg.style.display = 'block';
+      btn.disabled = true;
+    } else {
+      errorMsg.style.display = 'none';
+      btn.disabled = false;
+    }
+  }
+
+  function updateQuotaDisplay() {
+    const days = document.getElementById('total-days').value;
+    if (days) validateQuota(parseInt(days));
+  }
+
+  async function submitLeave() {
+    const leaveType = document.getElementById('leave-type').value;
+    const startDate = document.getElementById('start-date').value;
+    const endDate   = document.getElementById('end-date').value;
+    const reason    = document.getElementById('reason').value;
+
+    if (!leaveType || !startDate || !endDate || !reason) {
+      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    document.getElementById('btn-submit').disabled = true;
+    document.getElementById('btn-submit').textContent = 'กำลังส่ง...';
+
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'submitLeave',
+          employeeId: userData.employeeId,
+          leaveType, startDate, endDate, reason
+        })
+      });
+      const result = await res.json();
+      if (result.success) {
+        alert('✅ ส่งใบลาสำเร็จ!\nรหัส: ' + result.requestId + '\nจำนวน: ' + result.totalDays + ' วัน');
+        liff.closeWindow();
+      } else {
+        alert('❌ ' + result.message);
+        document.getElementById('btn-submit').disabled = false;
+        document.getElementById('btn-submit').textContent = 'ส่งใบลา';
+      }
+    } catch (e) {
+      alert('❌ เกิดข้อผิดพลาด: ' + e.message);
+      document.getElementById('btn-submit').disabled = false;
+      document.getElementById('btn-submit').textContent = 'ส่งใบลา';
+    }
+  }
+
+  initLiff();
+</script>
+</body>
+</html>
